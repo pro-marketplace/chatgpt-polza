@@ -3,7 +3,7 @@
 Генерация текста через ChatGPT (GPT-4o, GPT-4, GPT-3.5 и новее) с виджетом-песочницей.
 
 > **Провайдер:** Polza.ai
-> **Модели:** GPT-4o, GPT-4o Mini, GPT-4 Turbo, GPT-4, GPT-3.5 Turbo
+> **Модели:** Все OpenAI модели (GPT-4o, GPT-5 и новее)
 > Работает без VPN из России.
 
 ---
@@ -229,13 +229,16 @@ if (result.success) {
 
 ## Доступные модели
 
-| ID | Название | Описание |
-|----|----------|----------|
-| `openai/gpt-4o` | GPT-4o | Самая мощная модель |
-| `openai/gpt-4o-mini` | GPT-4o Mini | Быстрая и доступная |
-| `openai/gpt-4-turbo` | GPT-4 Turbo | Сбалансированная |
-| `openai/gpt-4` | GPT-4 | Оригинальная GPT-4 |
-| `openai/gpt-3.5-turbo` | GPT-3.5 Turbo | Бюджетная модель |
+Список моделей загружается динамически из Polza.ai API.
+
+Поддерживаются все модели с префиксом `openai/*`:
+- GPT-5.2, GPT-5.2 Pro, GPT-5.2 Chat
+- GPT-4o, GPT-4o Mini
+- GPT-4 Turbo, GPT-4
+- GPT-3.5 Turbo
+- И другие новые модели
+
+**Актуальный список:** [polza.ai/models](https://polza.ai/models)
 
 ---
 

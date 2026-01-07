@@ -26,14 +26,6 @@ PROVIDER_BASE_URL = "https://api.polza.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_TIMEOUT = 60
 
-# Available GPT models
-GPT_MODELS = [
-    {"id": "openai/gpt-4o", "name": "GPT-4o", "description": "Most capable model"},
-    {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "description": "Fast and affordable"},
-    {"id": "openai/gpt-4-turbo", "name": "GPT-4 Turbo", "description": "Balanced performance"},
-    {"id": "openai/gpt-4", "name": "GPT-4", "description": "Original GPT-4"},
-    {"id": "openai/gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "description": "Legacy fast model"},
-]
 
 
 @dataclass
@@ -136,11 +128,10 @@ def handle_generate(body: dict) -> dict:
     temperature = body.get("temperature", 0.7)
     max_tokens = body.get("max_tokens")
 
-    # Validate model is GPT
-    valid_model_ids = [m["id"] for m in GPT_MODELS]
-    if model not in valid_model_ids:
+    # Validate model starts with openai/
+    if not model.startswith("openai/"):
         return cors_response(400, {
-            "error": f"Invalid model. Available: {', '.join(valid_model_ids)}"
+            "error": "This extension only supports OpenAI models (openai/*)"
         })
 
     request_data = {
@@ -181,13 +172,32 @@ def handle_generate(body: dict) -> dict:
 def handle_models(body: dict) -> dict:
     """
     GET/POST ?action=models
-    List available GPT models.
+    List available GPT models from Polza.ai.
     """
-    return cors_response(200, {
-        "success": True,
-        "models": GPT_MODELS,
-        "provider": "polza.ai",
-    })
+    try:
+        result = make_request("models", method="GET")
+
+        # Filter only OpenAI models
+        models = []
+        for model in result.get("data", []):
+            model_id = model.get("id", "")
+            if model_id.startswith("openai/"):
+                models.append({
+                    "id": model_id,
+                    "name": model_id.replace("openai/", "").upper(),
+                })
+
+        return cors_response(200, {
+            "success": True,
+            "models": models,
+            "provider": "polza.ai",
+        })
+    except (TimeoutError, ConnectionError) as e:
+        return cors_response(503, {"error": str(e)})
+    except ValueError as e:
+        return cors_response(400, {"error": str(e)})
+    except Exception as e:
+        return cors_response(500, {"error": str(e)})
 
 
 def handle_test(body: dict) -> dict:
