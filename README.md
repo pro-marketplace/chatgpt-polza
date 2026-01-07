@@ -1,6 +1,6 @@
 # ChatGPT Extension
 
-Генерация текста через ChatGPT (GPT-4o, GPT-4, GPT-3.5) с виджетом-песочницей.
+Генерация текста через ChatGPT (GPT-4o, GPT-4, GPT-3.5 и новее) с виджетом-песочницей.
 
 > **Провайдер:** Polza.ai
 > **Модели:** GPT-4o, GPT-4o Mini, GPT-4 Turbo, GPT-4, GPT-3.5 Turbo
