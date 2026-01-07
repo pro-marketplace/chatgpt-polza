@@ -1,8 +1,7 @@
 /**
- * ChatGPT Playground - Chat interface for GPT models
+ * ChatGPT Playground - Песочница для тестирования GPT моделей
  *
- * A sandbox widget for testing ChatGPT text generation.
- * Provider: Polza.ai
+ * Провайдер: Polza.ai
  */
 
 "use client";
@@ -16,26 +15,92 @@ import { useChatGPT } from "./useChatGPT";
 
 interface Message {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant";
   content: string;
-  timestamp: Date;
+}
+
+interface GPTModel {
+  id: string;
+  name: string;
 }
 
 interface ChatGPTPlaygroundProps {
   apiUrl: string;
   defaultModel?: string;
-  systemPrompt?: string;
-  title?: string;
-  placeholder?: string;
 }
 
 // =============================================================================
-// TYPES
+// MODEL DROPDOWN
 // =============================================================================
 
-interface GPTModel {
-  id: string;
-  name: string;
+function ModelDropdown({
+  value,
+  onChange,
+  models,
+  loading,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  models: GPTModel[];
+  loading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedModel = models.find((m) => m.id === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => !loading && setOpen(!open)}
+        disabled={loading}
+        className="w-full flex items-center justify-between px-3 py-2 bg-[#2d2d2d] border border-gray-600 rounded text-sm text-left hover:border-gray-500 focus:outline-none focus:border-green-500 disabled:opacity-50"
+      >
+        <span className="truncate">
+          {loading ? "Загрузка..." : selectedModel?.name || value}
+        </span>
+        <svg
+          className={`w-4 h-4 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && models.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-[#2d2d2d] border border-gray-600 rounded shadow-lg max-h-60 overflow-y-auto">
+          {models.map((model) => (
+            <button
+              key={model.id}
+              type="button"
+              onClick={() => {
+                onChange(model.id);
+                setOpen(false);
+              }}
+              className={`w-full px-3 py-2 text-sm text-left hover:bg-[#3d3d3d] ${
+                model.id === value ? "bg-green-600/20 text-green-400" : ""
+              }`}
+            >
+              {model.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // =============================================================================
@@ -45,24 +110,18 @@ interface GPTModel {
 export function ChatGPTPlayground({
   apiUrl,
   defaultModel = "openai/gpt-4o-mini",
-  systemPrompt,
-  title = "ChatGPT",
-  placeholder = "Напишите сообщение...",
 }: ChatGPTPlaygroundProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState(defaultModel);
-  const [temperature, setTemperature] = useState(0.7);
-  const [showSettings, setShowSettings] = useState(false);
   const [models, setModels] = useState<GPTModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
   const { generate, getModels, isLoading, error } = useChatGPT({ apiUrl });
 
-  // Load models on mount
+  // Загрузка моделей
   useEffect(() => {
     const loadModels = async () => {
       setModelsLoading(true);
@@ -75,256 +134,180 @@ export function ChatGPTPlayground({
     loadModels();
   }, [getModels]);
 
-  // Auto-scroll to bottom
+  // Автоскролл
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-resize textarea
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
-  };
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    const text = input.trim();
+    if (!text || isLoading) return;
 
-    const trimmedInput = input.trim();
-    if (!trimmedInput || isLoading) return;
-
-    // Add user message
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: trimmedInput,
-      timestamp: new Date(),
+      content: text,
     };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
-    // Reset textarea height
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
-
-    // Build messages for API
     const apiMessages = [];
-
-    if (systemPrompt) {
-      apiMessages.push({ role: "system" as const, content: systemPrompt });
+    if (systemPrompt.trim()) {
+      apiMessages.push({ role: "system" as const, content: systemPrompt.trim() });
     }
-
-    // Include conversation history
     messages.forEach((msg) => {
       apiMessages.push({ role: msg.role, content: msg.content });
     });
+    apiMessages.push({ role: "user" as const, content: text });
 
-    apiMessages.push({ role: "user" as const, content: trimmedInput });
-
-    // Generate response
-    const result = await generate({
-      messages: apiMessages,
-      model: selectedModel,
-      temperature,
-    });
+    const result = await generate({ messages: apiMessages, model: selectedModel });
 
     if (result.success && result.content) {
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: result.content,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", content: result.content! },
+      ]);
     } else {
-      const errorMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `Error: ${result.error || "Failed to generate response"}`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", content: `Ошибка: ${result.error}` },
+      ]);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
-
-  const clearChat = () => {
-    setMessages([]);
-  };
+  const clearChat = () => setMessages([]);
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-2">
-          <svg className="w-6 h-6 text-green-500" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.896zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-          </svg>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
+    <div className="flex h-full bg-[#1e1e1e] text-white">
+      {/* Левая панель - Настройки */}
+      <div className="w-80 border-r border-gray-700 flex flex-col">
+        <div className="p-4 border-b border-gray-700">
+          <h1 className="text-lg font-medium">Песочница</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            title="Settings"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
+
+        <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+          {/* Модель */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Модель</label>
+            <ModelDropdown
+              value={selectedModel}
+              onChange={setSelectedModel}
+              models={models}
+              loading={modelsLoading}
+            />
+          </div>
+
+          {/* Системное сообщение */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Системное сообщение</label>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="Опишите поведение модели..."
+              rows={6}
+              className="w-full px-3 py-2 bg-[#2d2d2d] border border-gray-600 rounded text-sm resize-none focus:outline-none focus:border-green-500 placeholder-gray-500"
+            />
+          </div>
+        </div>
+
+        {/* Кнопка очистки */}
+        <div className="p-4 border-t border-gray-700">
           <button
             onClick={clearChat}
-            className="p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            title="Clear chat"
+            className="w-full px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-600 rounded hover:border-gray-500 transition-colors"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
+            Очистить чат
           </button>
         </div>
       </div>
 
-      {/* Settings Panel */}
-      {showSettings && (
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <div className="space-y-3">
-            {/* Model Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model</label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={modelsLoading}
-                className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50"
+      {/* Правая панель - Чат */}
+      <div className="flex-1 flex flex-col">
+        {/* Сообщения */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {messages.length === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <p>Ваш диалог появится здесь</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 max-w-3xl mx-auto">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[85%] px-4 py-3 rounded-lg ${
+                      msg.role === "user" ? "bg-green-600" : "bg-[#2d2d2d]"
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-[#2d2d2d] px-4 py-3 rounded-lg">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Ошибка */}
+        {error && (
+          <div className="px-6 py-2 bg-red-900/30 border-t border-red-800">
+            <p className="text-sm text-red-400">{error}</p>
+          </div>
+        )}
+
+        {/* Ввод */}
+        <div className="p-4 border-t border-gray-700">
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+            <div className="flex items-end gap-3 bg-[#2d2d2d] rounded-lg px-4 py-3">
+              <textarea
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                placeholder="Введите сообщение..."
+                disabled={isLoading}
+                rows={1}
+                className="flex-1 bg-transparent text-sm resize-none focus:outline-none placeholder-gray-500 disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="p-2 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                {modelsLoading ? (
-                  <option>Loading models...</option>
-                ) : models.length > 0 ? (
-                  models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value={defaultModel}>{defaultModel}</option>
-                )}
-              </select>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
             </div>
-
-            {/* Temperature */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Temperature: {temperature.toFixed(1)}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
-              />
-              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                <span>Precise</span>
-                <span>Creative</span>
-              </div>
-            </div>
-          </div>
+          </form>
         </div>
-      )}
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <svg className="w-12 h-12 mx-auto mb-3 text-green-500 opacity-50" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.896zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-            </svg>
-            <p>Start a conversation with ChatGPT</p>
-            <p className="text-sm mt-1">{models.find((m) => m.id === selectedModel)?.name || selectedModel}</p>
-          </div>
-        )}
-
-        {messages.map((message) => (
-          <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[80%] px-4 py-2 rounded-2xl ${
-                message.role === "user"
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-              }`}
-            >
-              <p className="whitespace-pre-wrap break-words">{message.content}</p>
-            </div>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 rounded-2xl">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
       </div>
-
-      {/* Error */}
-      {error && (
-        <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        </div>
-      )}
-
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            disabled={isLoading}
-            rows={1}
-            className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 border-0 rounded-2xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:ring-2 focus:ring-green-500 focus:outline-none disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
-        </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">Shift+Enter for new line</p>
-      </form>
     </div>
   );
 }
